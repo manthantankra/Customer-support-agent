@@ -12,7 +12,9 @@ from support_agent import answer
 
 SCENARIOS = [
     ("What is your return policy?",              "info question, answered from the knowledge base"),
-    ("Where is my order 10432?",                 "action, resolved with the order_lookup tool"),
+    ("Where is my order 10432?",                 "action, resolved with live order_lookup tool (in transit)"),
+    ("Where is my order 5012?",                  "action, live order_lookup tool (warehouse processing)"),
+    ("Where is my order 9999?",                  "action, live order_lookup tool (order not found)"),
     ("My item arrived damaged, I need a replacement", "action, resolved by opening a ticket"),
     ("I want a refund for order 10432",          "high-impact, escalated for human approval"),
     ("What is the meaning of life?",             "out of scope, escalated to a human"),
@@ -36,18 +38,29 @@ def main():
     for q, note in SCENARIOS:
         show(q, note)
 
-    # assertions (this is the test)
+    # assertions (this is the test suite)
     a = answer("What is your return policy?")
     assert "30 days" in (a["answer"] or "") and not a.get("escalate"), "return-policy path broke"
+
     b = answer("Where is my order 10432?")
-    assert "10432" in (b["answer"] or "") and "in transit" in (b["answer"] or "") and not b.get("escalate"), "order-lookup path broke"
+    assert "10432" in (b["answer"] or "") and "in transit" in (b["answer"] or "") and "FedEx" in (b["answer"] or "") and not b.get("escalate"), "order-lookup 10432 broke"
+
+    b2 = answer("Where is my order 5012?")
+    assert "5012" in (b2["answer"] or "") and "processing in warehouse" in (b2["answer"] or "") and not b2.get("escalate"), "order-lookup 5012 broke"
+
+    b3 = answer("Where is my order 9999?")
+    assert "could not find order '9999'" in (b3["answer"] or "") and not b3.get("escalate"), "order-lookup 9999 error handling broke"
+
     c = answer("My item arrived damaged, I need a replacement")
     assert "ticket" in (c["answer"] or "").lower() and not c.get("escalate"), "ticket path broke"
+
     r = answer("I want a refund for order 10432")
     assert r.get("escalate"), "refund should escalate for human approval"
+
     d = answer("What is the meaning of life?")
     assert d.get("escalate"), "escalation path broke"
-    print("\nAll scenario checks passed.")
+
+    print("\nAll scenario checks passed successfully!")
 
 
 if __name__ == "__main__":

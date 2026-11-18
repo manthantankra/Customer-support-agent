@@ -86,8 +86,12 @@ def _answer_from_context(context):
 
 def _answer_from_tool(tool_result):
     if tool_result.get("tool") == "order_lookup":
-        return (f"Your order {tool_result['order_id']} is {tool_result['status']}, "
-                f"estimated delivery {tool_result['eta']}.")
+        if not tool_result.get("found", True):
+            return f"I checked our system, but could not find order '{tool_result['order_id']}'. Please double-check your order number or let me know if you'd like me to connect you with a representative."
+        items_str = f" for {', '.join(tool_result['items'])}" if tool_result.get("items") else ""
+        carrier_str = f" via {tool_result['carrier']} (Tracking: {tool_result['tracking_number']})" if tool_result.get("carrier") else ""
+        return (f"Your order {tool_result['order_id']}{items_str} is {tool_result['status']}{carrier_str}. "
+                f"Estimated arrival: {tool_result['eta']}.")
     if tool_result.get("tool") == "create_ticket":
         return (f"I have opened support ticket {tool_result['ticket_id']} for you. "
                 f"Our team will follow up by email within 1 business day.")

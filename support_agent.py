@@ -57,12 +57,63 @@ def n_agent(state: State):
     return upd
 
 
+# Simulated live order database (in production, an external Order Service API)
+ORDERS_DB = {
+    "10432": {
+        "status": "in transit (out for delivery)",
+        "carrier": "FedEx",
+        "tracking_number": "FX-998231",
+        "eta": "Today by 5:00 PM",
+        "items": ["Ergonomic Mechanical Keyboard"],
+    },
+    "5012": {
+        "status": "processing in warehouse",
+        "carrier": "USPS",
+        "tracking_number": "US-441029",
+        "eta": "2026-11-20",
+        "items": ["USB-C Charging Hub"],
+    },
+    "8821": {
+        "status": "delivered",
+        "carrier": "UPS",
+        "tracking_number": "1Z-999AA1",
+        "eta": "Delivered yesterday at front porch",
+        "items": ["Noise Cancelling Headphones"],
+    },
+}
+
+
 def n_order_lookup(state: State):
     args = state["decision"].get("args", {})
-    res = {"tool": "order_lookup", "order_id": args.get("order_id", "unknown"),
-           "status": "in transit", "eta": "2026-07-18"}
-    return {"tool_result": res, "steps": state.get("steps", 0) + 1,
-            "trace": _trace(state, "tool: order_lookup")}
+    order_id = str(args.get("order_id", "unknown")).strip()
+
+    # Query simulated live database
+    if order_id in ORDERS_DB:
+        order_info = ORDERS_DB[order_id]
+        res = {
+            "tool": "order_lookup",
+            "order_id": order_id,
+            "status": order_info["status"],
+            "eta": order_info["eta"],
+            "carrier": order_info["carrier"],
+            "tracking_number": order_info["tracking_number"],
+            "items": order_info["items"],
+            "found": True,
+        }
+    else:
+        res = {
+            "tool": "order_lookup",
+            "order_id": order_id,
+            "found": False,
+            "status": "not found",
+            "message": f"No order found matching ID '{order_id}'. Please verify the order number.",
+        }
+
+    return {
+        "tool_result": res,
+        "steps": state.get("steps", 0) + 1,
+        "trace": _trace(state, f"tool: order_lookup ({order_id} -> {res['status']})"),
+    }
 
 
 def n_create_ticket(state: State):
