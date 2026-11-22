@@ -43,13 +43,13 @@ def main():
     assert "30 days" in (a["answer"] or "") and not a.get("escalate"), "return-policy path broke"
 
     b = answer("Where is my order 10432?")
-    assert "10432" in (b["answer"] or "") and "in transit" in (b["answer"] or "") and "FedEx" in (b["answer"] or "") and not b.get("escalate"), "order-lookup 10432 broke"
+    assert "10432" in (b["answer"] or "") and "out for delivery" in (b["answer"] or "").lower() and "FedEx" in (b["answer"] or "") and not b.get("escalate"), "order-lookup 10432 broke"
 
     b2 = answer("Where is my order 5012?")
-    assert "5012" in (b2["answer"] or "") and "processing in warehouse" in (b2["answer"] or "") and not b2.get("escalate"), "order-lookup 5012 broke"
+    assert "5012" in (b2["answer"] or "") and "processing in warehouse" in (b2["answer"] or "").lower() and not b2.get("escalate"), "order-lookup 5012 broke"
 
     b3 = answer("Where is my order 9999?")
-    assert "could not find order '9999'" in (b3["answer"] or "") and not b3.get("escalate"), "order-lookup 9999 error handling broke"
+    assert "9999" in (b3["answer"] or "") and ("couldn't find" in (b3["answer"] or "").lower() or "could not find" in (b3["answer"] or "").lower()) and not b3.get("escalate"), "order-lookup 9999 error handling broke"
 
     c = answer("My item arrived damaged, I need a replacement")
     assert "ticket" in (c["answer"] or "").lower() and not c.get("escalate"), "ticket path broke"

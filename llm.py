@@ -19,6 +19,10 @@ langchain-google-genai.
 """
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 REFUND_INTENT = ("refund", "cancel", "money back", "chargeback")  # high-impact: needs a human
 TICKET_INTENT = ("damaged", "broken", "replace", "return item", "wrong item")
 ORDER_INTENT = ("order", "track", "where is my", "delivery status", "shipment")
@@ -85,15 +89,79 @@ def _answer_from_context(context):
 
 
 def _answer_from_tool(tool_result):
+    if not isinstance(tool_result, dict):
+        return "Done."
+
     if tool_result.get("tool") == "order_lookup":
-        if not tool_result.get("found", True):
-            return f"I checked our system, but could not find order '{tool_result['order_id']}'. Please double-check your order number or let me know if you'd like me to connect you with a representative."
-        items_str = f" for {', '.join(tool_result['items'])}" if tool_result.get("items") else ""
-        carrier_str = f" via {tool_result['carrier']} (Tracking: {tool_result['tracking_number']})" if tool_result.get("carrier") else ""
-        return (f"Your order {tool_result['order_id']}{items_str} is {tool_result['status']}{carrier_str}. "
-                f"Estimated arrival: {tool_result['eta']}.")
+        # 1. Handle Infrastructure Failure / Service Unavailable
+        if not tool_result.get("success", False):
+            err = tool_result.get("error") or {}
+            err_code = err.get("code")
+            if err_code == "ORDER_SERVICE_UNAVAILABLE":
+                return (
+                    "I'm temporarily unable to retrieve your order information. "
+                    "Please try again shortly, or let me connect you with a representative."
+                )
+            if err_code == "INVALID_INPUT":
+                msg = err.get("message", "Please check your order number.")
+                return f"Please provide a valid order number. {msg}"
+            return (
+                "I'm temporarily unable to retrieve your order information. "
+                "Please try again shortly, or let me connect you with a representative."
+            )
+
+        # 2. Handle Order Not Found
+        if tool_result.get("found") is False:
+            order_id = tool_result.get("order_id") or "that order number"
+            return (
+                f"I checked our system, but couldn't find order {order_id}. "
+                f"Please double-check your order number, or let me know if you'd like me to connect you with a representative."
+            )
+
+        # 3. Handle Order Found
+        data = tool_result.get("data")
+        if not data or not isinstance(data, dict):
+            return (
+                "I found your order record, but details are currently unavailable. "
+                "Please contact support for more details."
+            )
+
+        order_id = data.get("order_id", "your order")
+        status_raw = data.get("status", "in progress")
+        status_display = status_raw.replace("_", " ")
+
+        items = data.get("items") or []
+        items_str = f" for the {', '.join(items)}" if items else ""
+
+        shipments = data.get("shipments") or []
+        shipment_details = []
+        for s in shipments:
+            carrier = s.get("carrier")
+            tracking = s.get("tracking_number")
+            eta = s.get("estimated_delivery")
+            carrier_part = f"{carrier} (Tracking: {tracking})" if (carrier and tracking) else (carrier or "")
+            eta_part = f", estimated delivery: {eta}" if eta else ""
+            if carrier_part:
+                shipment_details.append(f"{carrier_part}{eta_part}")
+
+        carrier_str = f" via {'; '.join(shipment_details)}" if shipment_details else ""
+
+        # Include latest tracking event description if available
+        tracking_history = data.get("tracking_history") or []
+        event_str = ""
+        if tracking_history:
+            latest_ev = tracking_history[-1]
+            desc = latest_ev.get("description") or latest_ev.get("status", "")
+            loc = latest_ev.get("location")
+            if desc and loc:
+                event_str = f" Latest update: {desc} at {loc}."
+            elif desc:
+                event_str = f" Latest update: {desc}."
+
+        return f"Your order {order_id}{items_str} is currently {status_display}{carrier_str}.{event_str}".strip()
+
     if tool_result.get("tool") == "create_ticket":
-        return (f"I have opened support ticket {tool_result['ticket_id']} for you. "
+        return (f"I have opened support ticket {tool_result.get('ticket_id', 'T-UNKNOWN')} for you. "
                 f"Our team will follow up by email within 1 business day.")
     return "Done."
 

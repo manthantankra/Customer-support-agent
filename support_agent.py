@@ -23,6 +23,7 @@ from langgraph.graph import StateGraph, START, END
 
 from kb import retrieve
 from llm import decide
+from order_service import get_order_by_number
 
 MAX_STEPS = 3  # cap the loop so a confused agent cannot spin forever
 
@@ -57,62 +58,29 @@ def n_agent(state: State):
     return upd
 
 
-# Simulated live order database (in production, an external Order Service API)
-ORDERS_DB = {
-    "10432": {
-        "status": "in transit (out for delivery)",
-        "carrier": "FedEx",
-        "tracking_number": "FX-998231",
-        "eta": "Today by 5:00 PM",
-        "items": ["Ergonomic Mechanical Keyboard"],
-    },
-    "5012": {
-        "status": "processing in warehouse",
-        "carrier": "USPS",
-        "tracking_number": "US-441029",
-        "eta": "2026-11-20",
-        "items": ["USB-C Charging Hub"],
-    },
-    "8821": {
-        "status": "delivered",
-        "carrier": "UPS",
-        "tracking_number": "1Z-999AA1",
-        "eta": "Delivered yesterday at front porch",
-        "items": ["Noise Cancelling Headphones"],
-    },
-}
-
-
 def n_order_lookup(state: State):
     args = state["decision"].get("args", {})
-    order_id = str(args.get("order_id", "unknown")).strip()
+    raw_order_id = args.get("order_id")
 
-    # Query simulated live database
-    if order_id in ORDERS_DB:
-        order_info = ORDERS_DB[order_id]
-        res = {
-            "tool": "order_lookup",
-            "order_id": order_id,
-            "status": order_info["status"],
-            "eta": order_info["eta"],
-            "carrier": order_info["carrier"],
-            "tracking_number": order_info["tracking_number"],
-            "items": order_info["items"],
-            "found": True,
-        }
+    # Delegate to the database-backed order service
+    res = get_order_by_number(raw_order_id)
+
+    # Determine trace message according to contract
+    order_id_display = str(raw_order_id or "missing").strip()
+    if res.get("success"):
+        outcome = "found" if res.get("found") else "not found"
+        trace_msg = f"tool: order_lookup ({order_id_display} -> {outcome})"
     else:
-        res = {
-            "tool": "order_lookup",
-            "order_id": order_id,
-            "found": False,
-            "status": "not found",
-            "message": f"No order found matching ID '{order_id}'. Please verify the order number.",
-        }
+        err_code = (res.get("error") or {}).get("code", "ERROR")
+        if err_code == "ORDER_SERVICE_UNAVAILABLE":
+            trace_msg = "tool: order_lookup (database unavailable)"
+        else:
+            trace_msg = f"tool: order_lookup ({order_id_display} -> {err_code})"
 
     return {
         "tool_result": res,
         "steps": state.get("steps", 0) + 1,
-        "trace": _trace(state, f"tool: order_lookup ({order_id} -> {res['status']})"),
+        "trace": _trace(state, trace_msg),
     }
 
 

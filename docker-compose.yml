@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: support-agent-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-support_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-support_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  init-db:
+    build: .
+    container_name: support-agent-init-db
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-support_db}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "python -m alembic upgrade head && python seed.py"
+
+  app:
+    build: .
+    container_name: support-agent-app
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-support_db}
+      SUPPORT_AGENT_MODEL: ${SUPPORT_AGENT_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    volumes:
+      - .:/app
+    command: python run.py
+
+volumes:
+  postgres_data:
+    name: support_agent_postgres_data
